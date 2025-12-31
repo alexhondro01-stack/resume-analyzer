@@ -1,0 +1,15 @@
+streamlit
+crewai
+langchain
+langchain_openai
+langchain-google-genai
+sentence-transformers
+spacy
+pdfplumber
+python-docx
+numpy
+scikit-learn
+fpdf
+firebase-admin
+google-cloud-firestore
+python-dotenv
