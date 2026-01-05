@@ -4,13 +4,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# --- ROBUST ENVIRONMENT LOADING ---
+# Ensure environment is loaded
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH, override=True)
 
-# FIX: Disable telemetry and signals for compatibility
+# Suppress telemetry
 os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 
@@ -24,28 +24,33 @@ class ResumeCrew:
     def _setup_llm(self):
         """Configures the LLM using the native CrewAI LLM class."""
         if self.provider == "Gemini":
-            api_key = os.getenv("GOOGLE_API_KEY")
+            api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip("'").strip('"')
             return LLM(
                 model="gemini/gemini-2.5-flash",
-                api_key=api_key,
+                api_key=api_key if api_key else None,
                 temperature=0.1
             )
         else:
-            api_key = os.getenv("OPENAI_API_KEY")
+            api_key = os.getenv("OPENAI_API_KEY", "").strip().strip("'").strip('"')
             return LLM(
                 model="gpt-4.1-nano",
-                api_key=api_key,
+                api_key=api_key if api_key else None,
                 temperature=0.1
             )
 
     def analyze(self):
-        """Step 1: Identify gaps and success likelihood."""
+        """Analyzes the resume against the JD with a focus on matches and gaps."""
         resume_content = tools.extract_text(self.resume_path)
         
         matcher_agent = Agent(
             role='Senior Recruitment Strategist',
-            goal='Identify missing high-impact keywords and evaluate success likelihood.',
-            backstory='Expert at ATS optimization and identifying professional qualification gaps.',
+            goal='Provide a balanced view of candidate matches and missing requirements, identifying what is missing vs what can be repurposed.',
+            backstory=(
+                'You are an expert recruiter. You excel at identifying both the strengths '
+                'that make a candidate a good fit and the critical gaps. You have a keen eye for '
+                'transferable skills and can spot when a candidate has the right experience but '
+                'is simply using the wrong terminology.'
+            ),
             llm=self.llm,
             verbose=True,
             allow_delegation=False
@@ -56,12 +61,23 @@ class ResumeCrew:
                 f"TARGET JOB DESCRIPTION:\n{self.jd_text}\n\n"
                 f"USER RESUME CONTENT:\n{resume_content}\n\n"
                 "INSTRUCTIONS:\n"
-                "1. Identify the 'Must-Have' Keywords from the JD missing in the resume.\n"
-                "2. Provide an Overall Success Score (XX/100).\n"
-                "3. List specific changes needed categorized by 'Requirements' and 'Qualifications'.\n"
-                "Categorize gaps as [HIGH], [MEDIUM], or [LOW] priority."
+                "Provide a report in the following EXACT format:\n"
+                "1. Overall Score: [Score]/100\n\n"
+                "2. SECTION: MATCHES\n"
+                "List top 5 skills or experiences the candidate ALREADY has that match the JD.\n\n"
+                "3. SECTION: JOB REQUIREMENTS GAPS\n"
+                "For each missing keyword/tool, indicate if it is:\n"
+                "- [MISSING]: Completely absent from the resume.\n"
+                "- [REPURPOSE]: The candidate has related experience that can be reworded to match this.\n"
+                "Format: - [MISSING/REPURPOSE][PRIORITY] Keyword/Skill\n"
+                "Priorities: [HIGH], [MEDIUM], or [LOW].\n\n"
+                "4. SECTION: QUALIFICATION GAPS\n"
+                "For each missing experience or degree, indicate if it is:\n"
+                "- [MISSING]: Completely absent.\n"
+                "- [REPURPOSE]: Can be mapped from other experience.\n"
+                "Format: - [MISSING/REPURPOSE][PRIORITY] Qualification/Experience"
             ),
-            expected_output="A structured report including a Score/100, missing keywords, and recommended changes.",
+            expected_output="A structured report with Score, Matches, and Gaps categorized by Missing vs Repurpose.",
             agent=matcher_agent
         )
 
@@ -69,13 +85,25 @@ class ResumeCrew:
         return crew.kickoff()
 
     def optimize(self, selected_fixes):
-        """Step 2: Rewrite resume and summarize transformations."""
+        """Rewrites the resume to integrate selected improvements."""
         resume_content = tools.extract_text(self.resume_path)
 
         customizer_agent = Agent(
-            role='Resume Optimizer',
-            goal='Inject missing keywords naturally and summarize changes.',
-            backstory='Expert at blending technical keywords into professional experience bullet points.',
+            role='Senior Resume Optimization Specialist',
+            goal='Rewrite the resume to maximize interview chances by highlighting impact, clarity, and ATS alignment without fabricating facts.',
+            backstory=(
+                "You are a Resume Optimization Agent specializing in tailoring resumes for competitive roles. "
+                "Your job is to take an existing resume and user-provided context to provide clear, actionable improvements.\n\n"
+                "Core Responsibilities:\n"
+                "- Highlight Impact: Ensure bullet points emphasize measurable outcomes (metrics, KPIs, efficiency gains).\n"
+                "- Clarity & Conciseness: Improve phrasing to be professional, concise, and results-driven. Remove fluff.\n"
+                "- ATS Optimization: Seamlessly integrate the specific keywords provided in the 'FIXES TO APPLY' list.\n"
+                "- Career Narrative: Ensure the resume tells a clear story of growth and professional maturity.\n"
+                "- Tone & Style: Maintain a confident, professional, and achievement-oriented tone.\n\n"
+                "Constraints:\n"
+                "- Do not invent false experiences. Only reframe and strengthen what the candidate provides or specific context they have added for missing skills.\n"
+                "- Ensure the final output is tailored for hiring managers and recruiters."
+            ),
             llm=self.llm,
             verbose=True,
             allow_delegation=False
@@ -84,11 +112,14 @@ class ResumeCrew:
         rewrite_task = Task(
             description=(
                 f"ORIGINAL RESUME:\n{resume_content}\n\n"
-                f"FIXES TO APPLY:\n{selected_fixes}\n\n"
+                f"FIXES TO APPLY (includes user context for missing items):\n{selected_fixes}\n\n"
                 "INSTRUCTIONS:\n"
-                "1. Rewrite the resume incorporating these keywords naturally. Start with 'REVISED RESUME'.\n"
-                "2. After the resume text, add a section called 'TRANSFORMATION LOG' where you list exactly which "
-                "sections were updated and how the new keywords were integrated."
+                "1. Rewrite the resume incorporating the selected fixes. \n"
+                "   - For 'REPURPOSE' items: Rephrase existing bullet points to match the new keywords/skills.\n"
+                "   - For 'MISSING' items: Use the user-provided context to create NEW, high-impact bullet points in the appropriate section.\n"
+                "2. Apply the 'Core Responsibilities' from your backstory (Impact, Clarity, ATS).\n"
+                "3. Start the response with 'REVISED RESUME'.\n"
+                "4. After the resume text, add a section called 'TRANSFORMATION LOG' explaining key changes and how specific gaps were addressed."
             ),
             expected_output="The full revised resume followed by a detailed TRANSFORMATION LOG.",
             agent=customizer_agent
