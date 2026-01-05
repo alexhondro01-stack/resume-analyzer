@@ -16,9 +16,10 @@ from fpdf import FPDF
 from tools import extract_text
 from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
+# --- ROBUST CONFIGURATION LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
+
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH, override=True) 
 else:
@@ -30,9 +31,17 @@ st.set_page_config(page_title="AI Resume Matcher", layout="wide", page_icon="�
 if 'step' not in st.session_state: st.session_state.step = 1
 if 'provider' not in st.session_state: st.session_state.provider = "OpenAI"
 if 'jd_text' not in st.session_state: st.session_state.jd_text = ""
+if 'selected_template' not in st.session_state: st.session_state.selected_template = "Modern"
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 if 'optimized_result' not in st.session_state: st.session_state.optimized_result = None
 if 'selected_improvements' not in st.session_state: st.session_state.selected_improvements = []
+
+# --- TEMPLATES ---
+TEMPLATES = {
+    "Executive": {"font": "Times New Roman", "align": "CENTER", "color": (0, 0, 0)},
+    "Modern": {"font": "Arial", "align": "LEFT", "color": (41, 128, 185)},
+    "ATS-Friendly": {"font": "Courier", "align": "LEFT", "color": (0, 0, 0)}
+}
 
 # --- HELPERS ---
 def get_api_key(provider_name):
@@ -186,6 +195,26 @@ def parse_feedback_advanced(text):
                     })
     return data
 
+def render_stepper(current_step):
+    """Renders a simple native Streamlit stepper."""
+    st.markdown("---")
+    steps = ["Upload Data", "Review Gaps", "Download Resume"]
+    cols = st.columns(len(steps))
+    
+    for i, (col, title) in enumerate(zip(cols, steps)):
+        idx = i + 1
+        with col:
+            if idx < current_step:
+                st.markdown(f"✅ **Step {idx}: {title}**")
+                st.progress(100)
+            elif idx == current_step:
+                st.markdown(f"🔵 **Step {idx}: {title}**")
+                st.progress(50)
+            else:
+                st.markdown(f"⚪ Step {idx}: {title}")
+                st.progress(0)
+    st.markdown("---")
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Settings")
@@ -203,11 +232,7 @@ with st.sidebar:
         st.rerun()
 
 # --- STEPPER ---
-s1, s2, s3 = st.columns(3)
-with s1: st.markdown(f"**{'🔵' if st.session_state.step==1 else '✅'} 1. Setup**")
-with s2: st.markdown(f"**{'🔵' if st.session_state.step==2 else '✅' if st.session_state.step>2 else '⚪'} 2. Analysis**")
-with s3: st.markdown(f"**{'🔵' if st.session_state.step==3 else '⚪'} 3. Results**")
-st.divider()
+render_stepper(st.session_state.step)
 
 # --- STEP 1: SETUP ---
 if st.session_state.step == 1:
