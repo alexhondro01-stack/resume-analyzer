@@ -12,4 +12,5 @@ scikit-learn
 fpdf
 firebase-admin
 google-cloud-firestore
+beautifulsoup4
 python-dotenv
