@@ -212,12 +212,8 @@ st.divider()
 # --- STEP 1: SETUP ---
 if st.session_state.step == 1:
     st.subheader("📄 Your Resume")
-    col1, col2 = st.columns(2)
-    with col1:
-        up = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
-        if up: st.session_state.original_filename = up.name
-    with col2:
-        st.info("Upload your current resume to get started.")
+    up = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
+    if up: st.session_state.original_filename = up.name
 
     st.divider()
     st.subheader("💼 Job Posting :orange[(BETA)]")
